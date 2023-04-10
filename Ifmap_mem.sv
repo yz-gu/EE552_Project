@@ -3,62 +3,70 @@ import SystemVerilogCSP::*;
 
 
 module Ifmap_mem (
-   interface ifmap_in, ifmap_in_addr, ifmap_out, load_done
+   interface ifmap_in, ifmap_in_addr, ifmap_out
 );
     parameter WIDTH_DATA = 13;
     parameter DEPTH_I = 25, WIDTH_I = 25;
 	parameter FL = 4, BL = 2;
+    parameter DEPTH_R = 21;
 
     logic [WIDTH_DATA-1: 0] ifmap [WIDTH_I*DEPTH_I-1: 0];
-    logic [WIDTH_DATA-1: 0] ifmap_value_receive, ifmap_value_send;
+    logic [WIDTH_DATA-1: 0] data_receive, data_send;
     logic [9:0] write_addr;
     logic [31:0] pkt;
-    logic done_sig;
+    logic load_done;
     bit [1:0] data_type = 2'b01;
     bit [7:0] dst_addr;
 
-    initial begin
-        for(int i=0; i<DEPTH_I*DEPTH_I; i++) begin
-			// timestep.Receive(ts);
-			// if (ts == 1) begin
+    always begin
+        for (int i=0; i<DEPTH_I*DEPTH_I; i++) begin
             fork
                 ifmap_in_addr.Receive(write_addr);
-                ifmap_in.Receive(ifmap_value_receive);
+                ifmap_in.Receive(data_receive);
             join
-            ifmap[write_addr] = ifmap_value_receive;
-            #1;
-            // end
+            ifmap[write_addr] = data_receive;
+            #BL;
         end
-
-        // for(integer i=0; i<DEPTH_I*DEPTH_I; i++) begin
-        //     timestep.Receive(ts);
-        //     if (ts == 2) begin
-        //         fork
-        //             ifmap_in_addr.Receive(write_addr);
-        //             ifmap_in.Receive(ifmap_value_receive);
-        //         join
-        //         ifmap[write_addr] = ifmap_value_receive;
-        //         #1;
-        //     end
-        // end
+        load_done = 1;
     end
     
     always begin
-        load_done.Receive(done_sig);
+        wait(load_done==1);
         for (int i = 0; i<DEPTH_I; i++) begin // send data line by line
             for (int j = 0; j<WIDTH_I; j++) begin
-                ifmap_value_send = ifmap[i*WIDTH_I+j];
-                if (i<3) begin
+                #FL;
+                data_send = ifmap[i*WIDTH_I+j];
+                if (i<DEPTH_R)
                     dst_addr = {i[4:0], 3'b0};
-                end
                 else
-                    dst_addr = {5'd2, i[2:0]-3'd2};
-                pkt = {1'b0, data_type, dst_addr, j[7:0], ifmap_value_send};
+                    dst_addr = {DEPTH_R[4:0]-3'd1, i[2:0]-DEPTH_R[2:0]+3'd1}; // reaches the last line
+                pkt = {1'b0, data_type, dst_addr, j[7:0], data_send};
                 ifmap_out.Send(pkt);
-                #BL;
             end
         end
+        load_done = 0;
     end
+
+    // always begin
+    //     for (int i = 0; i<DEPTH_I; i++) begin // send data line by line
+    //         for (int j = 0; j<WIDTH_I; j++) begin
+    //             fork
+    //                 ifmap_in_addr.Receive(write_addr);
+    //                 ifmap_in.Receive(data_receive);
+    //             join
+    //             ifmap[write_addr] = data_receive;
+    //             #FL;
+
+    //             if (i<3)
+    //                 dst_addr = {i[4:0], 3'b0};
+    //             else
+    //                 dst_addr = {5'd2, i[2:0]-3'd2};
+    //             pkt = {1'b0, data_type, dst_addr, j[7:0], data_receive};
+    //             ifmap_out.Send(pkt);
+    //             #BL;
+    //         end
+    //     end
+    // end
 endmodule
 
 

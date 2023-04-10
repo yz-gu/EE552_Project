@@ -2,44 +2,71 @@
 import SystemVerilogCSP::*;
 
 
-module Arbiter ( // arbitrate inputs from 5 inputs, priority: up>down>left>right>local, send the output to Resend module
+module Arbiter ( // 
     interface up_in, down_in, left_in, right_in, local_in, arb_out
 );
     parameter WIDTH_PKT = 32;
     parameter FL = 4, BL = 2;
-    logic [WIDTH_PKT-1:0] pkt;
+    logic [WIDTH_PKT-1:0] pkt_up, pkt_down, pkt_left, pkt_right, pkt_local;
+    logic flag_up = 0, flag_down = 0, flag_left = 0, flag_right = 0, flag_local = 0;
 
     always begin
-        wait(up_in.status!=idle | down_in.status!=idle | left_in.status!=idle | right_in.status!=idle | local_in.status!=idle)
-        if (up_in.status!=idle) begin
-            up_in.Receive(pkt);
-            #FL;
-            arb_out.Send(pkt);
-            #BL;
+        if (up_in.status!=idle & !flag_up) begin
+            up_in.Receive(pkt_up);
+            flag_up = 1;
         end
-        if (down_in.status!=idle) begin
-            down_in.Receive(pkt);
-            #FL;
-            arb_out.Send(pkt);
-            #BL;
+        #BL;
+    end
+    always begin
+        if (down_in.status!=idle & !flag_down) begin
+            down_in.Receive(pkt_down);
+            flag_down = 1;
         end
-        if (left_in.status!=idle) begin
-            left_in.Receive(pkt);
-            #FL;
-            arb_out.Send(pkt);
-            #BL;
+        #BL;
+    end
+    always begin
+        if (left_in.status!=idle & !flag_left) begin
+            left_in.Receive(pkt_left);
+            flag_left = 1;
         end
-        if (right_in.status!=idle) begin
-            right_in.Receive(pkt);
-            #FL;
-            arb_out.Send(pkt);
-            #BL;
+        #BL;
+    end
+    always begin
+        if (right_in.status!=idle & !flag_right) begin
+            right_in.Receive(pkt_right);
+            flag_right = 1;
         end
-        if (local_in.status!=idle) begin
-            local_in.Receive(pkt);
-            #FL;
-            arb_out.Send(pkt);
-            #BL;
+        #BL;
+    end
+    always begin
+        if (local_in.status!=idle & !flag_local) begin
+            local_in.Receive(pkt_local);
+            flag_local = 1;
+        end
+        #BL;
+    end
+
+    always begin
+        #FL;
+        if(flag_up) begin
+            arb_out.Send(pkt_up);
+            flag_up = 0;
+        end
+        if(flag_down) begin
+            arb_out.Send(pkt_down);
+            flag_down = 0;
+        end
+        if(flag_left) begin
+            arb_out.Send(pkt_left);
+            flag_left = 0;
+        end
+        if(flag_right) begin
+            arb_out.Send(pkt_right);
+            flag_right = 0;
+        end
+        if(flag_local) begin
+            arb_out.Send(pkt_local);
+            flag_local = 0;
         end
     end
 endmodule
@@ -51,6 +78,7 @@ module Resend ( // create a copy for the filter and ifmap packet if necessary
     parameter WIDTH_PKT = 32;
     parameter FL = 4, BL = 2;
     parameter ADDRX = 3'd0, ADDRY = 5'd0;
+    parameter DEPTH_R = 21, DEPTH_F = 5;
     logic [WIDTH_PKT-1:0] pkt, pkt_new;
     logic [7:0] dst_addr, dst_addr_new;
 
@@ -59,13 +87,13 @@ module Resend ( // create a copy for the filter and ifmap packet if necessary
         #FL;
         out.Send(pkt);
         dst_addr = pkt[28:21];
-        if(pkt[30:29]==2'b00 & dst_addr=={ADDRY, ADDRX} & ADDRY!=5'd2) begin // it's a filter packet, the new dst addr = y+1
-            dst_addr_new[7:3] = dst_addr[7:3] + 1;
+        if(pkt[30:29]==2'b00 & dst_addr=={ADDRY, ADDRX} & ADDRY!=DEPTH_R[4:0]-5'd1) begin // it's a filter packet, the new dst addr = y+1
             dst_addr_new[2:0] = dst_addr[2:0];
+            dst_addr_new[7:3] = dst_addr[7:3] + 1;
             pkt_new = {pkt[31:29], dst_addr_new, pkt[20:0]};
             out.Send(pkt_new);
         end
-        if(pkt[30:29]==2'b01 & dst_addr=={ADDRY, ADDRX} & ADDRY!=5'd0 & ADDRX!=3'd2) begin // it's a ifmap packet, the new dst addr is x+1, y-1
+        if(pkt[30:29]==2'b01 & dst_addr=={ADDRY, ADDRX} & ADDRY!=5'd0 & ADDRX!=DEPTH_F[2:0]-3'd1) begin // it's a ifmap packet, the new dst addr is x+1, y-1
             dst_addr_new[2:0] = dst_addr[2:0] + 1;
             dst_addr_new[7:3] = dst_addr[7:3] - 1;
             pkt_new = {pkt[31:29], dst_addr_new, pkt[20:0]};
@@ -113,11 +141,12 @@ module Router (
     parameter WIDTH_PKT = 32;
     parameter ADDRX = 3'd0, ADDRY = 5'd0;
     parameter FL = 4, BL = 2;
+    parameter DEPTH_R = 21, DEPTH_F = 5;
     Channel #(.hsProtocol(P4PhaseBD),.WIDTH(WIDTH_PKT)) arb_out(), forward_in();
 
     Arbiter #(.WIDTH_PKT(WIDTH_PKT), .FL(FL), .BL(BL))
         arb(.up_in(up_in), .down_in(down_in), .left_in(left_in), .right_in(right_in), .local_in(local_in), .arb_out(arb_out));
-    Resend #(.WIDTH_PKT(WIDTH_PKT), .FL(FL), .BL(BL), .ADDRX(ADDRX), .ADDRY(ADDRY))
+    Resend #(.WIDTH_PKT(WIDTH_PKT), .FL(FL), .BL(BL), .ADDRX(ADDRX), .ADDRY(ADDRY), .DEPTH_R(DEPTH_R), .DEPTH_F(DEPTH_F))
         resend(.in(arb_out), .out(forward_in));
     Forward #(.WIDTH_PKT(WIDTH_PKT), .FL(FL), .BL(BL), .ADDRX(ADDRX), .ADDRY(ADDRY))
         fwd(.forward_in(forward_in), .up_out(up_out), .down_out(down_out), .left_out(left_out), .right_out(right_out), .local_out(local_out));

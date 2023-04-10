@@ -3,44 +3,66 @@ import SystemVerilogCSP::*;
 
 
 module Filter_mem (
-   interface filter_in, filter_in_addr, filter_out, load_done
+   interface filter_in, filter_in_addr, filter_out
 );
     parameter WIDTH_DATA = 13;
     parameter DEPTH_F = 5, WIDTH_F = 5;
 	parameter FL = 4, BL = 2;
 
     logic [WIDTH_DATA-1: 0] filter [WIDTH_F*DEPTH_F-1: 0];
-    logic [WIDTH_DATA-1: 0] filter_value_receive, filter_value_send;
+    logic [WIDTH_DATA-1: 0] data_receive, data_send;
     logic [4:0] write_addr;
     logic [31:0] pkt;
-    logic done_sig;
+    logic load_done;
     bit [1:0] data_type = 2'b00;
-    bit [7:0] dest_addr;
+    bit [7:0] dst_addr;
 
-    initial begin
-        for(int i=0; i<DEPTH_F*DEPTH_F; i++) begin
+    always begin
+        for (int i=0; i<DEPTH_F*DEPTH_F; i++) begin
             fork
                 filter_in_addr.Receive(write_addr);
-                filter_in.Receive(filter_value_receive);
+                filter_in.Receive(data_receive);
             join
-            filter[write_addr] = filter_value_receive;
-            #1;
+            filter[write_addr] = data_receive;
+            #BL;
         end
+        load_done = 1;
     end
 
     always begin
-        load_done.Receive(done_sig);
+        wait(load_done==1);
         for (int i = 0; i<DEPTH_F; i++) begin // send data line by line
-            dest_addr = {5'b0, i[2:0]}; // data on the nth line is sent to the 1st PE on nth column
+            dst_addr = {5'b0, i[2:0]}; // data on the nth line is sent to the 1st PE on nth column
             for (int j = 0; j<WIDTH_F; j++) begin
-                filter_value_send = filter[i*WIDTH_F+j];
-                pkt = {1'b0, data_type, dest_addr, j[7:0], filter_value_send};
+                #FL;
+                data_send = filter[i*WIDTH_F+j];
+                pkt = {1'b0, data_type, dst_addr, j[7:0], data_send};
                 filter_out.Send(pkt);
-                #BL;
             end
         end
+        load_done = 0;
         // $stop;
     end
+
+    // always begin
+    //     for (int i = 0; i<DEPTH_F; i++) begin // send data line by line
+    //         dst_addr = {5'b0, i[2:0]}; // data on the nth line is sent to the 1st PE on nth column
+    //         for (int j = 0; j<WIDTH_F; j++) begin
+    //             fork
+    //                 filter_in_addr.Receive(write_addr);
+    //                 filter_in.Receive(data_receive);
+    //             join
+    //             filter[write_addr] = data_receive;
+    //             #FL;
+
+    //             pkt = {1'b0, data_type, dst_addr, j[7:0], data_receive};
+    //             filter_out.Send(pkt);
+    //             #BL;
+    //         end
+    //     end
+    //     // $stop;
+    // end
+
 endmodule
 
 
