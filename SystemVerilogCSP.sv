@@ -63,13 +63,13 @@ interface Channel;
 			fork
 				if(status==s_pend) begin
 					if(($time - lastSendEvent) > `defaultWatchDogTime) begin
-						#(lastSendEvent - ($time - 2*`defaultWatchDogTime)) $display("###Deadlock Detected on %m @ %t",lastSendEvent);
+						#(lastSendEvent - ($time - 2*`defaultWatchDogTime)); // $display("###Deadlock Detected on %m @ %t",lastSendEvent);
 						wait(0);
 					end
 				end
 				if(status==r_pend) begin
 					if(($time - lastReceiveEvent) > `defaultWatchDogTime) begin
-						#(lastReceiveEvent - ($time - 2*`defaultWatchDogTime)) $display("###Deadlock Detected on %m @ %t",lastReceiveEvent);
+						#(lastReceiveEvent - ($time - 2*`defaultWatchDogTime)); // $display("###Deadlock Detected on %m @ %t",lastReceiveEvent);
 						wait(0);
 					end
 				end
@@ -138,7 +138,7 @@ interface Channel;
 		end
 		`ifdef displayStalls
 			stall = $time - start;
-			if(stall != 0) $display("### %m Stalled(%d) @ %t",stall,$time);
+			// if(stall != 0) $display("### %m Stalled(%d) @ %t",stall,$time);
 		`endif
 	endtask
 	
@@ -250,7 +250,7 @@ interface Channel;
 		end
 		`ifdef displayStalls
 			stall = $time - start;
-			if(stall != 0) $display("### %m Stalled(%d) @ %t",stall,$time);
+			// if(stall != 0) $display("### %m Stalled(%d) @ %t",stall,$time);
 		`endif
 	endtask
 
