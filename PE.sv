@@ -3,12 +3,12 @@ import SystemVerilogCSP::*;
 
 
 module Filter_RF ( // 1-dimension filter memory, write into all locations before read
-    interface filter_in, filter_out, filter_out_addr
+    interface filter_in, filter_out, filter_out_addr, load_done
 );
     parameter WIDTH_DATA = 13;
     parameter DEPTH_F = 5, ADDR_F = 3;
 	parameter FL = 4, BL = 2;
-    logic [WIDTH_DATA-1: 0] filter [DEPTH_F-1: 0];
+    logic [DEPTH_F-1: 0] [WIDTH_DATA-1: 0] filter;
     logic [ADDR_F-1: 0] waddr, raddr;
     logic [20: 0] filter_in_data;
 
@@ -19,6 +19,8 @@ module Filter_RF ( // 1-dimension filter memory, write into all locations before
             filter[waddr] = filter_in_data[12:0];
             #BL;
         end
+        load_done.Send(1);
+        load_done.Send(1);
     end
     
     always begin
@@ -36,17 +38,17 @@ module Ifmap_RF ( // 1-dimension ifmap memory
     parameter WIDTH_DATA = 13;
     parameter DEPTH_I = 25, ADDR_I = 5;
 	parameter FL = 4, BL = 2;
-    logic [WIDTH_DATA-1: 0] ifmap [DEPTH_I-1: 0];
-    logic [ADDR_I-1: 0] waddr, raddr;
+    logic [DEPTH_I-1: 0] [WIDTH_DATA-1: 0] ifmap;
+    logic [ADDR_I-1: 0] raddr;
     logic [20: 0] ifmap_in_data;
 
     always begin
-        for (int i = 0; i<DEPTH_I; i++) begin
-            ifmap_in.Receive(ifmap_in_data);
-            waddr = ifmap_in_data[12+ADDR_I:13];
-            ifmap[waddr] = ifmap_in_data[12:0];
-            #BL;
-        end
+        ifmap_in.Receive(ifmap_in_data);
+        ifmap[12:0] = ifmap_in_data[12:0];
+        #BL;
+        ifmap_in.Receive(ifmap_in_data);
+        ifmap[24:13] = ifmap_in_data[11:0];
+        #BL;
         load_done.Send(1);
     end
 
@@ -66,9 +68,9 @@ module Psum_FIFO ( // psum fifo, store the psum_in in case psum_in arrives befor
     parameter DEPTH_R = 3;
     parameter FL = 4, BL = 2;
     parameter ADDRX = 3'b0;
-    logic [WIDTH_DATA-1:0] fifo [15:0];
+    logic [WIDTH_DATA-1:0] fifo [31:0];
     logic [WIDTH_DATA-1:0] psum_value;
-    logic [3:0] wptr=0, rptr=0, depth=0;
+    logic [4:0] wptr=0, rptr=0, depth=0;
     
     always begin
         psum_fifo_in.Receive(psum_value);
@@ -93,14 +95,17 @@ endmodule
 
 
 module Control (
-    interface acc_clear, split_sel, add_sel, filter_addr, ifmap_addr, load_done_I
+    interface acc_clear, split_sel, add_sel, filter_addr, ifmap_addr, load_done_F, load_done_I
 );
     parameter DEPTH_F = 5, DEPTH_I = 25, DEPTH_R = 21;
 	parameter FL = 4, BL = 2;
-	logic load_done_sig_F, load_done_sig_I, test;
+	logic load_done_sig_F, load_done_sig_I;
 
     always begin
-        load_done_I.Receive(load_done_sig_I);
+        fork
+            load_done_F.Receive(load_done_sig_F);
+            load_done_I.Receive(load_done_sig_I);
+        join
 		#FL;
         for (int i = 0; i<DEPTH_R; i++) begin
             for (int j = 0; j<DEPTH_F; j++) begin
@@ -188,6 +193,10 @@ module Accumulator (
         end
         #BL;
     end
+
+    initial begin
+        out.Send(0);
+    end
 endmodule
 
 
@@ -228,19 +237,19 @@ module PE (
     Channel #(.hsProtocol(P4PhaseBD), .WIDTH(21)) filter_in(), ifmap_in();
     Channel #(.hsProtocol(P4PhaseBD), .WIDTH(WIDTH_DATA)) psum_in(), psum_fifo_out(), psum_out();
 
-    Channel #(.hsProtocol(P4PhaseBD), .WIDTH(1)) acc_clear(), add_sel(), split_sel(), load_done_I();
+    Channel #(.hsProtocol(P4PhaseBD), .WIDTH(1)) acc_clear(), add_sel(), split_sel(), load_done_F(), load_done_I();
 	Channel #(.hsProtocol(P4PhaseBD), .WIDTH(3)) filter_raddr();
 	Channel #(.hsProtocol(P4PhaseBD), .WIDTH(5)) ifmap_raddr();
 	Channel #(.hsProtocol(P4PhaseBD), .WIDTH(WIDTH_DATA)) filter_out(), ifmap_out(), mul_out(), adder_out(), acc_out(), acc_in();
 
 	Filter_RF 	#(.WIDTH_DATA(WIDTH_DATA), .DEPTH_F(DEPTH_F), .ADDR_F(3), .FL(FL), .BL(BL))			
-		filter_rf (.filter_in(filter_in), .filter_out(filter_out), .filter_out_addr(filter_raddr));
-	Ifmap_RF 	#(.WIDTH_DATA(WIDTH_DATA), .DEPTH_I(DEPTH_I), .ADDR_I(5), .FL(FL), .BL(BL))
+		filter_rf (.filter_in(filter_in), .filter_out(filter_out), .filter_out_addr(filter_raddr), .load_done(load_done_F));
+	Ifmap_RF 	#(.WIDTH_DATA(1), .DEPTH_I(DEPTH_I), .ADDR_I(5), .FL(FL), .BL(BL))
 		ifmap_rf (.ifmap_in(ifmap_in), .ifmap_out(ifmap_out), .ifmap_out_addr(ifmap_raddr), .load_done(load_done_I));
     Psum_FIFO   #(.WIDTH_DATA(WIDTH_DATA), .DEPTH_R(DEPTH_R), .ADDRX(ADDRX))
         psum_fifo (.psum_fifo_in(psum_in), .psum_fifo_out(psum_fifo_out));
 	Control 	#(.DEPTH_F(DEPTH_F), .DEPTH_I(DEPTH_I), .DEPTH_R(DEPTH_R), .FL(FL), .BL(BL))
-		ctrl (.acc_clear(acc_clear), .split_sel(split_sel), .add_sel(add_sel), .filter_addr(filter_raddr), .ifmap_addr(ifmap_raddr), .load_done_I(load_done_I));
+		ctrl (.acc_clear(acc_clear), .split_sel(split_sel), .add_sel(add_sel), .filter_addr(filter_raddr), .ifmap_addr(ifmap_raddr), .load_done_F(load_done_F), .load_done_I(load_done_I));
 	Multiplier  #(.WIDTH_DATA(WIDTH_DATA), .FL(FL), .BL(BL))
 		mul (.in0(filter_out), .in1(ifmap_out), .out(mul_out));
 	Adder 		#(.WIDTH_DATA(WIDTH_DATA), .FL(FL), .BL(BL))
@@ -250,9 +259,9 @@ module PE (
 	Split 		#(.WIDTH_DATA(WIDTH_DATA), .FL(FL), .BL(BL))
 		split (.sel(split_sel), .in(adder_out), .acc_out(acc_in), .psum_out(psum_out));
 
-	initial begin
-		acc.out.Send(0);
-	end
+	// initial begin
+	// 	acc.out.Send(0);
+	// end
 
     always begin
         in.Receive(pkt_in);
@@ -298,6 +307,7 @@ module PE (
             pkt_out = {3'b010, ADDRY, ADDRX+3'd1, ADDRY, ADDRX, psum_result};
         else // this is the final result, send to the result mem
             pkt_out = {3'b011, DEPTH_R[4:0], DEPTH_F[2:0]-3'd1, ADDRY, ADDRX, psum_result};
+            
         out.Send(pkt_out);
     end
 endmodule

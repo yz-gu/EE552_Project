@@ -9,7 +9,7 @@ module Filter_mem (
     parameter DEPTH_F = 5, WIDTH_F = 5;
 	parameter FL = 4, BL = 2;
 
-    logic [WIDTH_DATA-1: 0] filter [WIDTH_F*DEPTH_F-1: 0];
+    logic [WIDTH_F*DEPTH_F-1: 0] [WIDTH_DATA-1: 0] filter;
     logic [WIDTH_DATA-1: 0] data_receive, data_send;
     logic [4:0] write_addr;
     logic [31:0] pkt;

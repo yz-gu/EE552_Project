@@ -10,7 +10,7 @@ module Ifmap_mem (
 	parameter FL = 4, BL = 2;
     parameter DEPTH_R = 21;
 
-    logic [WIDTH_DATA-1: 0] ifmap [WIDTH_I*DEPTH_I-1: 0];
+    logic [WIDTH_I*DEPTH_I-1: 0] [WIDTH_DATA-1: 0] ifmap;
     logic [WIDTH_DATA-1: 0] data_receive, data_send;
     logic [9:0] write_addr;
     logic [31:0] pkt;
@@ -30,43 +30,44 @@ module Ifmap_mem (
         load_done = 1;
     end
     
+//    always begin
+//        wait(load_done==1);
+//        for (int i = 0; i<DEPTH_I; i++) begin // send data line by line
+//            for (int j = 0; j<WIDTH_I; j++) begin
+//                #FL;
+//                data_send = ifmap[i*WIDTH_I+j];
+//                if (i<DEPTH_R)
+//                    dst_addr = {i[4:0], 3'b0};
+//                else
+//                    dst_addr = {DEPTH_R[4:0]-3'd1, i[2:0]-DEPTH_R[2:0]+3'd1}; // reaches the last line
+//                pkt = {1'b0, data_type, dst_addr, j[7:0], data_send};
+//                ifmap_out.Send(pkt);
+//            end
+//        end
+//        load_done = 0;
+//    end
+
+    logic [12:0] data2send;
     always begin
         wait(load_done==1);
         for (int i = 0; i<DEPTH_I; i++) begin // send data line by line
-            for (int j = 0; j<WIDTH_I; j++) begin
-                #FL;
-                data_send = ifmap[i*WIDTH_I+j];
-                if (i<DEPTH_R)
-                    dst_addr = {i[4:0], 3'b0};
-                else
-                    dst_addr = {DEPTH_R[4:0]-3'd1, i[2:0]-DEPTH_R[2:0]+3'd1}; // reaches the last line
-                pkt = {1'b0, data_type, dst_addr, j[7:0], data_send};
-                ifmap_out.Send(pkt);
-            end
+            #FL;
+            if (i<DEPTH_R)
+                dst_addr = {i[4:0], 3'b0};
+            else
+                dst_addr = {DEPTH_R[4:0]-3'd1, i[2:0]-DEPTH_R[2:0]+3'd1}; // reaches the last line
+                
+            data2send = {ifmap[i*WIDTH_I+12], ifmap[i*WIDTH_I+11], ifmap[i*WIDTH_I+10], ifmap[i*WIDTH_I+9], ifmap[i*WIDTH_I+8], ifmap[i*WIDTH_I+7], ifmap[i*WIDTH_I+6], ifmap[i*WIDTH_I+5], ifmap[i*WIDTH_I+4], ifmap[i*WIDTH_I+3], ifmap[i*WIDTH_I+2], ifmap[i*WIDTH_I+1], ifmap[i*WIDTH_I]};
+            pkt = {1'b0, data_type, dst_addr, 8'b0, data2send};
+            ifmap_out.Send(pkt);
+            #FL;
+            data2send = {1'b0, ifmap[i*WIDTH_I+24], ifmap[i*WIDTH_I+23], ifmap[i*WIDTH_I+22], ifmap[i*WIDTH_I+21], ifmap[i*WIDTH_I+20], ifmap[i*WIDTH_I+19], ifmap[i*WIDTH_I+18], ifmap[i*WIDTH_I+17], ifmap[i*WIDTH_I+16], ifmap[i*WIDTH_I+15], ifmap[i*WIDTH_I+14], ifmap[i*WIDTH_I+13]};
+            pkt = {1'b0, data_type, dst_addr, 8'b1, data2send};
+            ifmap_out.Send(pkt);
         end
         load_done = 0;
     end
 
-    // always begin
-    //     for (int i = 0; i<DEPTH_I; i++) begin // send data line by line
-    //         for (int j = 0; j<WIDTH_I; j++) begin
-    //             fork
-    //                 ifmap_in_addr.Receive(write_addr);
-    //                 ifmap_in.Receive(data_receive);
-    //             join
-    //             ifmap[write_addr] = data_receive;
-    //             #FL;
-
-    //             if (i<3)
-    //                 dst_addr = {i[4:0], 3'b0};
-    //             else
-    //                 dst_addr = {5'd2, i[2:0]-3'd2};
-    //             pkt = {1'b0, data_type, dst_addr, j[7:0], data_receive};
-    //             ifmap_out.Send(pkt);
-    //             #BL;
-    //         end
-    //     end
-    // end
 endmodule
 
 

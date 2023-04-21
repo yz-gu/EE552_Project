@@ -2,7 +2,7 @@
 import SystemVerilogCSP::*;
 
 
-module Arbiter ( // 
+module Arbiter ( // round robin
     interface up_in, down_in, left_in, right_in, local_in, arb_out
 );
     parameter WIDTH_PKT = 32;
@@ -11,35 +11,35 @@ module Arbiter ( //
     logic flag_up = 0, flag_down = 0, flag_left = 0, flag_right = 0, flag_local = 0;
 
     always begin
-        if (up_in.status!=idle & !flag_up) begin
+        if (!flag_up) begin
             up_in.Receive(pkt_up);
             flag_up = 1;
         end
         #BL;
     end
     always begin
-        if (down_in.status!=idle & !flag_down) begin
+        if (!flag_down) begin
             down_in.Receive(pkt_down);
             flag_down = 1;
         end
         #BL;
     end
     always begin
-        if (left_in.status!=idle & !flag_left) begin
+        if (!flag_left) begin
             left_in.Receive(pkt_left);
             flag_left = 1;
         end
         #BL;
     end
     always begin
-        if (right_in.status!=idle & !flag_right) begin
+        if (!flag_right) begin
             right_in.Receive(pkt_right);
             flag_right = 1;
         end
         #BL;
     end
     always begin
-        if (local_in.status!=idle & !flag_local) begin
+        if (!flag_local) begin
             local_in.Receive(pkt_local);
             flag_local = 1;
         end
@@ -118,9 +118,8 @@ module Forward ( // send the packet to the corresponding output port
         forward_in.Receive(pkt);
         dst_addr = pkt[28:21];
         #FL;
-        if (dst_addr[2:0] == ADDRX && dst_addr[7:3] == ADDRY) begin
+        if (dst_addr[2:0] == ADDRX && dst_addr[7:3] == ADDRY)
             local_out.Send(pkt);
-        end
         else if (dst_addr[2:0] > ADDRX)
             right_out.Send(pkt);
         else if (dst_addr[2:0] < ADDRX)
